@@ -18,14 +18,15 @@ Basic configuration in `Foundation.hs`:
 ```haskell
 ldapConf :: LdapAuthConf
 ldapConf =
-    setHost (Secure "127.0.0.1") $ setPort 636
+    setHost (Tls "127.0.0.1" defaultTlsSettings)
+  $ setPort 636
   $ mkLdapConf (Just ("cn=Manager,dc=example,dc=com", "v3ryS33kret"))
       "ou=people,dc=example,dc=com"
 ```
 
 And add `authLdap ldapConf` to your `authPlugins`.
 
-Make sure the address you provide exactly maches the one in the server certificate. Otherwise you will only get a cryptic TLS negotiation failure.
+Make sure the address you provide exactly maches the one in the server certificate. Otherwise you will only get a cryptic TLS negotiation failure. To deactivate certificate validation use `insecureTlsSettings`.
 
 For plain connection (only for testing!):
 ```haskell
@@ -38,7 +39,8 @@ For additional group authentication use `setGroupQuery`:
  ldapConf =
      setGroupQuery (Just $ mkGroupQuery
        "ou=group,dc=example,dc=com" "cn" "it" "memberUid")
-   $ setHost (Secure "127.0.0.1") $ setPort 636
+   $ setHost (Tls "127.0.0.1" defaultTlsSettings)
+   $ setPort 636
    $ mkLdapConf (Just ("cn=yourapp,ou=services,dc=example,dc=com", "v3ryS33kret"))
        "ou=people,dc=example,dc=com"
 ```
