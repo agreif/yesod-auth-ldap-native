@@ -2,6 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -46,7 +47,7 @@ import Yesod.Auth
 import Yesod.Form
 import Control.Applicative ((<$>), (<*>))
 import Control.Exception (SomeException, IOException, Handler (..), catches)
-import Control.Monad.Trans.Either (EitherT (..), left)
+import Control.Monad.Trans.Except (runExceptT, throwE)
 import Data.List.NonEmpty (NonEmpty (..), (<|))
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -96,7 +97,7 @@ mkLdapConf
   -> Text     -- ^ user query baseDn
   -> LdapAuthConf
 mkLdapConf mbindc baseDn = LdapAuthConf
-  { host   = L.Secure "localhost"
+  { host   = L.Plain "localhost"
   , port   = 636
   , bindCreds = (\(dn,p) -> LdapCreds (L.Dn dn) (L.Password $ T.encodeUtf8 p)) <$> mbindc
   , userQuery  = mkUserQuery baseDn
@@ -173,7 +174,7 @@ dispatch _ _ _                 = notFound
 dispatchLdap :: (RenderMessage site FormMessage) => LdapAuthConf -> AuthHandler site TypedContent
 dispatchLdap conf = do
   tp <- getRouteToParent
-  (username, password) <- lift $ runInputPost $ (,)
+  (username, password) <- liftHandler $ runInputPost $ (,)
     <$> ireq textField "username"
     <*> ireq textField "password"
 
@@ -185,10 +186,10 @@ dispatchLdap conf = do
       case debug conf > 0 of
         True  -> setMessage $ [shamlet|<div.alert.alert-danger>Sign in failure. Error: #{show err}|]
         False -> setMessage $ [shamlet|<div.alert.alert-danger>Sign in failure. That is all we know right now. Try again later.|]
-      lift $ redirect $ tp LoginR
+      liftHandler $ redirect $ tp LoginR
     Right (L.SearchEntry _ attrs) -> do
       let extra = map f attrs
-      lift $ setCredsRedirect $ Creds pluginName username extra
+      liftHandler $ setCredsRedirect $ Creds pluginName username extra
 
   where
     f (L.Attr k, x : _) = (k, T.decodeUtf8 x)
@@ -221,22 +222,22 @@ ldapLogin :: LdapAuthConf -> Text -> Text -> IO (Either LdapAuthError L.SearchEn
 ldapLogin conf user pw = do
   res <- L.with (host conf) (port conf) $ \l ->
 
-    runEitherT $ do
+    runExceptT $ do
       -- service bind
       esb <- case bindCreds conf of
               Just c -> lift $ L.bindEither l (lcDn c) (lcPw c)
               Nothing -> return $ Right ()
       case esb of
         Right _ -> return ()
-        Left _ -> left ServiceBindError
+        Left _ -> throwE ServiceBindError
 
       -- user search
       eu <- lift $ query l (userQuery conf) user
       se@(L.SearchEntry dn _) <- case eu of
         Right (x : []) -> return x
-        Right [] -> left UserNotFoundError
-        Right _  -> left MultipleUsersError
-        Left err -> left $ ResponseError err
+        Right [] -> throwE UserNotFoundError
+        Right _  -> throwE MultipleUsersError
+        Left err -> throwE $ ResponseError err
 
       -- verify group membership if groupQuery was given
       let mg = groupQuery conf
@@ -246,16 +247,16 @@ ldapLogin conf user pw = do
       case eg of
         -- either becase groupQuery was not provided or returned nothing
         Right [] -> case mg of
-                      Just _  -> left GroupMembershipError
+                      Just _  -> throwE GroupMembershipError
                       Nothing -> return ()
         Right _  -> return ()
-        Left err -> left $ ResponseError err
+        Left err -> throwE $ ResponseError err
 
       -- user bind - verify password
       eub <- lift $ L.bindEither l dn (L.Password (T.encodeUtf8 pw))
       case eub of
         Right _ -> return ()
-        Left _  -> left UserBindError
+        Left _  -> throwE UserBindError
 
       return se
   case res of
