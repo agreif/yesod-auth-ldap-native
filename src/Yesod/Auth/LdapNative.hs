@@ -154,15 +154,15 @@ setDebug :: Int -> LdapAuthConf -> LdapAuthConf
 setDebug level conf = conf { debug = level }
 
 
-authLdap :: YesodAuth m => LdapAuthConf -> AuthPlugin m
+authLdap :: YesodAuth site => LdapAuthConf -> AuthPlugin site
 authLdap conf = authLdapWithForm conf defaultForm
 
-authLdapWithForm :: (Yesod m, YesodAuth m) => LdapAuthConf -> (Route m -> WidgetT m IO ()) -> AuthPlugin m
+authLdapWithForm :: (Yesod site, YesodAuth site) => LdapAuthConf -> (Route site -> WidgetT site IO ()) -> AuthPlugin site
 authLdapWithForm conf form =
   AuthPlugin pluginName (dispatch conf) $ \tp -> form (tp loginRoute)
 
 
-dispatch :: LdapAuthConf -> Text -> [Text] -> AuthHandler master TypedContent
+dispatch :: LdapAuthConf -> Text -> [Text] -> AuthHandler site TypedContent
 dispatch conf "POST" ["login"] = dispatchLdap conf
 dispatch _ _ _                 = notFound
 
